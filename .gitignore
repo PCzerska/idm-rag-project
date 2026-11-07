@@ -7,6 +7,8 @@ __pycache__/
 .qdrant/
 .cache/
 data/raw/*
+data/original/
+data/processed/
 !data/raw/.gitkeep
 !data/raw/manifest.json
 eval/results/*

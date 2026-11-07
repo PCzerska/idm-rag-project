@@ -19,11 +19,12 @@ from rag.chunking import Block, Chunk, chunk_blocks
 from rag.config import Settings
 from rag.embeddings import embed_documents
 from rag.normalize import basic_clean, join_split_words, word_counts
+from rag.prepared import load_prepared
 from rag.store import ensure_collection, get_client, upsert_chunks
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_SUFFIXES = (".pdf", ".md", ".txt")
+SUPPORTED_SUFFIXES = (".pdf", ".md", ".txt", ".jsonl")  # .jsonl = gotowe chunki (prepared.py)
 
 
 # --------------------------------------------------------------------------- loaders
@@ -114,6 +115,11 @@ def build_chunks(paths: list[Path], settings: Settings, strategy: str | None = N
     strategy = strategy or settings.chunking
     chunks: list[Chunk] = []
     for path in discover_files(paths):
+        if path.suffix.lower() == ".jsonl":  # gotowe chunki: bez parsowania i chunkingu
+            prepared = load_prepared(path)
+            log.info("%s: %d gotowych chunków", path.name, len(prepared))
+            chunks += prepared
+            continue
         blocks = normalize_blocks(load_file(path))
         for b in blocks:
             b.metadata["source_ids"] = source_ids_for(b.metadata)
