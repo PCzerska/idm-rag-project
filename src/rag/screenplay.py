@@ -44,6 +44,12 @@ SCENE_RE = re.compile(r"^(\d+[A-Z]?(?:\*{1,2})?)(?:\.|(?<=\*))\s+(\S.*)$")
 PORA_RE = re.compile(r"\b(DZIEŃ/SEKWENCJA|DZIEŃ|NOC|WIECZÓR|ŚWIT)$")
 REMOVED_RE = re.compile(r"USUNI[ĘE]TA|SKRE[ŚS]LONA")
 
+# Postacie: imiona przed kwestiami (linie „cue”). Dopiski techniczne po imieniu opisują sposób
+# podania kwestii, nie osobę („GUCCI FACETIME”, „PROBOSZCZ O.S.” = spoza kadru) – odcinamy je.
+CUE_SUFFIX_RE = re.compile(r"\s+(?:FACETIME|O\.S\.|OFF|GŁOS|GŁOŚNIK|NAGRANIE|EKRAN)$")
+NON_CHARACTER_CUES = {"CUT TO:", "KONIEC"}  # przejścia montażowe stoją w tej samej kolumnie
+CHARACTER_TYPOS = {"FIILP": "FILIP", "FILIPA": "FILIP"}  # literówki w scenariuszu
+
 
 class Line(NamedTuple):
     """Linia tekstu z PDF-a z pozycją na stronie."""
@@ -67,6 +73,7 @@ class Scene:
     page_from: int
     page_to: int
     paragraphs: list[str] = field(default_factory=list)
+    characters: list[str] = field(default_factory=list)  # mówiące postacie, kolejność wejścia
 
     @property
     def removed(self) -> bool:
@@ -117,6 +124,26 @@ def line_kind(x0: float) -> str:
     if x0 >= DIALOG_MIN_X0:
         return "dialog"
     return "action"
+
+
+def character_names(cue: str) -> list[str]:
+    """Postacie z linii przed kwestią: bez dopisków technicznych, z poprawionymi literówkami.
+
+    `MAŁY KURCZAK/KURCZAK` (kwestia mówiona razem) daje dwie postacie; `CUT TO:` – żadnej.
+    """
+    if cue in NON_CHARACTER_CUES:
+        return []
+    names = []
+    for part in cue.split("/"):
+        name = CUE_SUFFIX_RE.sub("", part.strip())
+        names.append(CHARACTER_TYPOS.get(name, name))
+    return [n for n in names if n]
+
+
+def scene_characters(lines: list[Line]) -> list[str]:
+    """Mówiące postacie sceny (bez powtórzeń, w kolejności pierwszej kwestii)."""
+    names = [n for ln in lines if line_kind(ln.x0) == "cue" for n in character_names(ln.text)]
+    return list(dict.fromkeys(names))
 
 
 def build_paragraphs(lines: list[Line]) -> list[str]:
@@ -201,6 +228,7 @@ def group_scenes(lines: Iterable[Line]) -> list[Scene]:
             body.append(ln)
     for scene, body in scenes:
         scene.paragraphs = build_paragraphs(body)
+        scene.characters = scene_characters(body)
     return [s for s, _ in scenes]
 
 
@@ -231,6 +259,13 @@ def scene_chunks(scenes: list[Scene], source_file: str) -> list[dict[str, Any]]:
         pages = str(s.page_from) if s.page_from == s.page_to else f"{s.page_from}-{s.page_to}"
         header = f"Scena {s.number} | {loc} | scenariusz, s. {pages}"
         texts = split_long(header, s.paragraphs or ["(brak opisu)"])
+        if s.characters:
+            # Druga linia każdej części: embedding „widzi”, kto występuje w scenie.
+            cast = "Postacie: " + ", ".join(s.characters)
+            texts = [
+                first + "\n" + cast + "\n" + rest
+                for first, rest in (t.split("\n", 1) for t in texts)
+            ]
         for i, text in enumerate(texts, 1):
             chunks.append(
                 {
@@ -245,6 +280,7 @@ def scene_chunks(scenes: list[Scene], source_file: str) -> list[dict[str, Any]]:
                         "pora": s.time_of_day,
                         "strona": s.page_from,
                         "strona_do": s.page_to,
+                        "postacie": s.characters,
                     },
                 }
             )

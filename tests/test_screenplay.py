@@ -5,6 +5,7 @@ import pytest
 from rag.screenplay import (
     Line,
     build_paragraphs,
+    character_names,
     group_scenes,
     match_heading,
     parse_heading,
@@ -129,6 +130,53 @@ def test_removed_scene_has_no_chunk():
     assert chunks[0]["tekst"] == "Scena 8 | WN. KOŚCIÓŁ. NOC | scenariusz, s. 1\n(brak opisu)"
 
 
+# --------------------------------------------------------------------------- postacie
+
+
+@pytest.mark.parametrize(
+    ("cue", "names"),
+    [
+        ("PROBOSZCZ", ["PROBOSZCZ"]),
+        ("GUCCI FACETIME", ["GUCCI"]),  # dopiski techniczne odcinane
+        ("KSIĄDZ PROBOSZCZ O.S.", ["KSIĄDZ PROBOSZCZ"]),
+        ("OJCIEC DOMINIKI GŁOS", ["OJCIEC DOMINIKI"]),
+        ("MATKA FILIPA NAGRANIE", ["MATKA FILIPA"]),
+        ("MAŁY KURCZAK/KURCZAK", ["MAŁY KURCZAK", "KURCZAK"]),  # kwestia mówiona razem
+        ("FIILP", ["FILIP"]),  # literówka w scenariuszu
+        ("CUT TO:", []),  # przejście montażowe w kolumnie postaci
+        ("KONIEC", []),
+    ],
+)
+def test_character_names(cue, names):
+    assert character_names(cue) == names
+
+
+def test_scene_characters_in_text_and_metadata():
+    lines = [
+        Line(114, "117. PL. POD KOŚCIOŁEM. DZIEŃ", HEAD, 0, 10),
+        Line(114, "GUCCI FACETIME", CUE, 15, 25),
+        Line(114, "Halo?", DIALOG, 25, 35),
+        Line(114, "FILIP", CUE, 40, 50),
+        Line(114, "Pomóżcie mi.", DIALOG, 50, 60),
+        Line(114, "GUCCI", CUE, 65, 75),
+        Line(114, "On go zabije.", DIALOG, 75, 85),
+        Line(114, "CUT TO:", 473, 90, 100),
+    ]
+    (chunk,) = scene_chunks(group_scenes(lines), "s.pdf")
+    assert chunk["meta"]["postacie"] == ["GUCCI", "FILIP"]  # bez powtórzeń, kolejność wejścia
+    assert chunk["tekst"].split("\n")[:2] == [
+        "Scena 117 | PL. POD KOŚCIOŁEM. DZIEŃ | scenariusz, s. 114",
+        "Postacie: GUCCI, FILIP",
+    ]
+
+
+def test_scene_without_dialog_has_no_cast_line():
+    lines = [Line(1, "8. WN. KOŚCIÓŁ. NOC", HEAD, 0, 10), action("Pusto.", top=20)]
+    (chunk,) = scene_chunks(group_scenes(lines), "s.pdf")
+    assert chunk["meta"]["postacie"] == []
+    assert "Postacie:" not in chunk["tekst"]
+
+
 # --------------------------------------------------------------------------- chunki
 
 
@@ -142,8 +190,15 @@ def test_split_long_splits_on_paragraphs_with_header():
 
 
 def test_scene_chunks_ids_for_long_scene():
-    lines = [Line(1, "40A. WN. POKÓJ FILIPA. NOC", HEAD, 0, 10)]
-    lines += [action(" ".join(["słowo"] * 500), top=100 * i) for i in range(1, 3)]
+    lines = [Line(1, "40A. WN. POKÓJ FILIPA. NOC", HEAD, 0, 10), Line(1, "FILIP", CUE, 20, 30)]
+    lines += [Line(1, " ".join(["słowo"] * 500), DIALOG, 100 * i, 100 * i + 10) for i in (1, 2)]
+    lines += [action(" ".join(["słowo"] * 500), top=300)]
     chunks = scene_chunks(group_scenes(lines), "s.pdf")
     assert [c["id"] for c in chunks] == ["scenariusz-40A-1", "scenariusz-40A-2"]
     assert {c["meta"]["scena"] for c in chunks} == {"40A"}
+    # Lista postaci w każdej części, zaraz po nagłówku z numerem części.
+    for i, c in enumerate(chunks, 1):
+        assert c["tekst"].split("\n")[:2] == [
+            f"Scena 40A | WN. POKÓJ FILIPA. NOC | scenariusz, s. 1 (część {i}/2)",
+            "Postacie: FILIP",
+        ]
