@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .qdrant/
+qdrant_storage/
 .cache/
 data/raw/*
 data/original/
@@ -16,3 +17,4 @@ eval/results/*
 .DS_Store
 # Notatki prowadzącego (nie dla studentów)
 instructor/
+.venv
