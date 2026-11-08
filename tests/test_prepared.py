@@ -12,73 +12,50 @@ def _write(tmp_path, records):
     return path
 
 
-RECORDS = [
+SCENE_12 = {
+    "id": "scenariusz-12",
+    "dokument": "scenariusz",
+    "zrodlo": "s.pdf",
+    "tekst": "Scena 12 ...",
+    "meta": {"scena": "12", "strona": 14, "obiekt": "SZKOŁA", "pora": None},
+}
+# Długa scena podzielona przez prepare_data.py na dwie części (to samo źródło = ta sama scena).
+SCENE_40A_PARTS = [
     {
-        "id": "scenariusz-12",
+        "id": f"scenariusz-40A-{i}",
         "dokument": "scenariusz",
         "zrodlo": "s.pdf",
-        "tekst": "Scena 12 ...",
-        "meta": {"scena": "12", "strona": 14, "obiekt": "SZKOŁA", "pora": None},
-    },
-    {
-        "id": "rekwizyty-03",
-        "dokument": "rekwizyty",
-        "zrodlo": "r.docx",
-        "tekst": "Rekwizyty ...",
-        "meta": {"sceny": ["3", "4"], "obiekt": "BUS"},
-    },
-    {
-        "id": "tabela-dzien-3",
-        "dokument": "tabela",
-        "zrodlo": "t.pdf",
-        "tekst": "Dzień 3 ...",
-        "meta": {
-            "dzien": "3",
-            "data": "21.08.2024",
-            "sceny": ["97", "59"],
-            "wiersze": [{"x": 1}],
-            "sumy": [],
-        },
-    },
-    {
-        "id": "obiekt-10",
-        "dokument": "obiekty",
-        "zrodlo": "o.pdf",
-        "tekst": "Obiekt 10 ...",
-        "meta": {"nr": 10, "obiekt": "Kościół"},
-    },
+        "tekst": f"Scena 40A (część {i}/2) ...",
+        "meta": {"scena": "40A", "strona": 46, "obiekt": "POKÓJ FILIPA", "pora": "NOC"},
+    }
+    for i in (1, 2)
 ]
 
 
 def test_source_ids_are_scene_based():
-    ids = [source_ids_for_prepared(r) for r in RECORDS]
-    assert ids[0] == ["scenariusz#s12"]
-    assert ids[1] == ["rekwizyty#s3", "rekwizyty#s4"]
-    assert ids[2] == ["tabela#d3", "tabela#s97", "tabela#s59"]
-    assert ids[3] == ["obiekty#o10"]
+    assert source_ids_for_prepared(SCENE_12) == ["scenariusz#s12"]
+    # Części jednej sceny mają to samo źródło → recall@k liczy się per scena.
+    assert {tuple(source_ids_for_prepared(r)) for r in SCENE_40A_PARTS} == {("scenariusz#s40A",)}
 
 
 def test_load_prepared_metadata_and_label(tmp_path):
-    chunks = load_prepared(_write(tmp_path, RECORDS))
-    assert all(isinstance(c, Chunk) for c in chunks)
-    scena, rek, tab, obj = chunks
-    assert scena.metadata["source"] == "scenariusz"
-    assert scena.metadata["page"] == 14 and scena.metadata["section"] == "scena 12"
-    assert "pora" not in scena.metadata  # None nie trafia do payloadu
-    assert rek.metadata["section"] == "sceny 3, 4"
-    assert tab.metadata["section"] == "dzień zdjęciowy 3 (21.08.2024)"
-    assert "wiersze" not in tab.metadata and "sumy" not in tab.metadata
-    assert obj.metadata["section"] == "obiekt 10"
+    (chunk,) = load_prepared(_write(tmp_path, [SCENE_12]))
+    assert isinstance(chunk, Chunk)
+    assert chunk.metadata["source"] == "scenariusz"
+    assert chunk.metadata["source_ids"] == ["scenariusz#s12"]
+    assert chunk.metadata["page"] == 14 and chunk.metadata["section"] == "scena 12"
+    assert chunk.metadata["obiekt"] == "SZKOŁA"
+    assert "pora" not in chunk.metadata  # None nie trafia do payloadu
 
 
 def test_ids_are_unique_and_stable(tmp_path):
-    path = _write(tmp_path, RECORDS)
+    path = _write(tmp_path, [SCENE_12, *SCENE_40A_PARTS])
     first = [c.id for c in load_prepared(path)]
-    assert len(set(first)) == len(first)
+    assert len(set(first)) == len(first)  # części tej samej sceny to osobne punkty w Qdrancie
     assert first == [c.id for c in load_prepared(path)]  # ponowny ingest → te same id
 
 
 def test_skips_blank_lines(tmp_path):
     path = tmp_path / "c.jsonl"
-    path.write_text(json.dumps(RECORDS[0], ensure_ascii=False) + "\n\n", encoding="utf-8")
+    path.write_text(json.dumps(SCENE_12, ensure_ascii=False) + "\n\n", encoding="utf-8")
     assert len(load_prepared(path)) == 1
