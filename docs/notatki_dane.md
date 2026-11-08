@@ -5,6 +5,7 @@ wywnioskowane z konwencji produkcji filmowej i treści scen – dokumenty nie ma
 Do potwierdzenia z produkcją.
 
 Jak scenariusz jest przetwarzany na chunki – krok po kroku: [przeplyw_danych.md](przeplyw_danych.md).
+Wyniki testów ręcznych: [notatki_testy.md](notatki_testy.md).
 
 ## Decyzja: rola dokumentów
 
