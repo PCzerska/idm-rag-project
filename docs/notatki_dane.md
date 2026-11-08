@@ -5,6 +5,7 @@ wywnioskowane z konwencji produkcji filmowej i treści scen – dokumenty nie ma
 Do potwierdzenia z produkcją.
 
 Jak scenariusz jest przetwarzany na chunki – krok po kroku: [przeplyw_danych.md](przeplyw_danych.md).
+Lista zadań zespołu: [TODO.md](TODO.md).
 Wyniki testów ręcznych: [notatki_testy.md](notatki_testy.md).
 
 ## Decyzja: rola dokumentów
@@ -44,8 +45,8 @@ Przyjęte:
    wyniki będą porównywalne. Uwaga: długość chunków różni się ~20× (10%/50%/90% = 33/95/232 słowa).
 4. **Postacie w chunku** – zrobione: linia `Postacie: …` w tekście (druga linia, w każdej części
    długiej sceny) i pole `postacie` w metadanych. Szczegóły: [przeplyw_danych.md](przeplyw_danych.md#etap-4-chunki--scene_chunks).
-   Do decyzji: czy scalać warianty imion – `PROBOSZCZ` / `KSIĄDZ PROBOSZCZ`,
-   `REKOLEKCJONISTA` / `KSIĄDZ REKOLEKCJONISTA`, `MATKA` / `MATKA FILIPA` (teraz osobno).
+   Warianty imion (np. `PROBOSZCZ` / `KSIĄDZ PROBOSZCZ`) są teraz osobno – decyzja otwarta,
+   patrz [TODO.md](TODO.md#przygotowanie-danych--decyzje-otwarte).
 
 Na później:
 
@@ -102,12 +103,4 @@ Wniosek: **ta sama litera znaczy co innego w scenariuszu i w tabeli** (np. `17A`
 - Ze scenariusza bez wpisu w tabeli: `6A`, `16A`, `40A`, `78A`, `103A`, `109A`, `109B`, `113A`, `55`.
 - Niezgodna numeracja między dokumentami: `17`, `17A` (w tabeli „Sala Ministrantów” = scena 17
   ze scenariusza), `103` (dzień 30 „dom Gucciego” = 103A), `117`, `117*`, `117**`.
-- Do sprawdzenia: `84B` (brak `84A` w scenariuszu) – wykluczyć, jeśli dane w tabeli się nie zgadzają.
-
-## Do zrobienia
-
-- [x] Sceny `117*` i `117**` były doklejane do 117A (wzorzec nagłówka nie dopuszczał gwiazdek).
-      Naprawione; parsowanie przeniesione do `src/rag/screenplay.py`, testy w `tests/test_screenplay.py`.
-      Wynik: 140 chunków (było 138), poza 117A/117*/117** bez zmian.
-- [x] Chunkować tylko scenariusz: parsery pozostałych dokumentów usunięte z `prepare_data.py`
-      (są w historii gita, commit 6a28f57); `prepared.py` i testy dotyczą tylko scenariusza.
+- `84B` (brak `84A` w scenariuszu) – do sprawdzenia, patrz [TODO.md](TODO.md#ewaluacja).
