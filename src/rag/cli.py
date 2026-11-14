@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 from rich.console import Console
@@ -91,21 +92,108 @@ SHORT_HEADERS = {
     "mrr": "MRR",
     "ctx_chars": "ctx",
     "refusal_ok": "odm.",
+    "false_refusal": "fałsz.odm.",
+    "correct_refusal": "popr.odm.",
     "citation_hit": "cyt.",
+    "cited_recall": "cyt.R",
     "inline_cited": "[n]",
+    "count_ok": "licz.",
+    "list_p": "L-P",
+    "list_r": "L-R",
+    "list_f1": "L-F1",
     "latency_s": "t[s]",
 }
+# Tabela per pytanie ma tylko podstawowe kolumny; reszta jest w tabelach grup i w pliku .md.
+ROW_METRICS = ("mrr", "ctx_chars", "refusal_ok", "citation_hit", "inline_cited", "latency_s")
+GROUP_METRICS = (
+    "mrr", "refusal_ok", "false_refusal", "correct_refusal", "citation_hit", "cited_recall",
+    "count_ok", "list_f1", "latency_s",
+)  # fmt: skip
+
+
+def _header(col: str) -> str:
+    return escape(SHORT_HEADERS.get(col, col.replace("recall@", "R@")))
+
+
+def print_group_table(title: str, groups: dict[str, dict]) -> None:
+    """Średnie metryk osobno dla każdej grupy (kategorii albo trudności)."""
+    from rag.eval import format_cell
+
+    if not groups:
+        return
+    first = next(iter(groups.values()))
+    recall_cols = [c for c in first if c.startswith("recall@")]
+    cols = recall_cols[-1:] + [
+        c for c in GROUP_METRICS if any(g.get(c) is not None for g in groups.values())
+    ]
+    table = Table(title=title)
+    table.add_column("grupa", no_wrap=True)
+    table.add_column("n", justify="right")
+    for col in cols:
+        table.add_column(_header(col), justify="right", no_wrap=True)
+    for name, summary in groups.items():
+        table.add_row(name, str(summary["questions"]), *(format_cell(summary.get(c)) for c in cols))
+    console.print(table)
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
-    from rag.eval import evaluate, format_cell, load_golden, save_results
+    from rag.eval import (
+        DEFAULT_KS,
+        evaluate,
+        format_cell,
+        load_golden,
+        results_from_rows,
+        save_results,
+    )
 
     settings = get_settings()
     items = load_golden(Path(args.golden))
-    results = evaluate(items, settings, generate=args.generate, collection=args.collection)
+    if args.sample and args.sample < len(items):
+        # równomiernie rozłożona próbka (zbiór jest uporządkowany od łatwych do trudnych)
+        step = len(items) / args.sample
+        items = [items[int(i * step)] for i in range(args.sample)]
+        console.print(f"[yellow]Próbka: {len(items)} pytań co ~{step:.1f}-te (nie pełny pomiar).[/]")
+
+    collected: list[dict] = []
+    started = time.perf_counter()
+
+    def progress(position: int, total: int, row: dict) -> None:
+        collected.append(row)
+        elapsed = time.perf_counter() - started
+        eta = elapsed / position * (total - position)
+        console.print(
+            f"[dim]{position}/{total}[/] {row['id']} · pytanie {elapsed / position:.1f}s średnio · "
+            f"minęło {elapsed / 60:.1f} min · zostało ~{eta / 60:.1f} min"
+        )
+
+    interrupted = False
+    try:
+        results = evaluate(
+            items,
+            settings,
+            ks=DEFAULT_KS,
+            generate=args.generate,
+            collection=args.collection,
+            on_row=progress,
+        )
+    except KeyboardInterrupt:
+        if not collected:
+            raise
+        interrupted = True
+        console.print(
+            f"[yellow]Przerwano po {len(collected)}/{len(items)} pytaniach – "
+            "zapisuję wyniki częściowe.[/]"
+        )
+        results = results_from_rows(collected, DEFAULT_KS)
     summary = results["summary"]
     # Kolumny = metryki policzone w tym przebiegu (bez --generate nie ma metryk odpowiedzi).
-    metric_cols = [c for c in summary if c != "questions" and summary[c] is not None]
+    metric_cols = [
+        c
+        for c in summary
+        if c != "questions"
+        and summary[c] is not None
+        and (c.startswith("recall@") or c in ROW_METRICS)
+    ]
     table = Table(
         title=f"Eval: {args.golden} · {settings.llm_model} · {args.collection or settings.collection}"
     )
@@ -114,11 +202,9 @@ def cmd_eval(args: argparse.Namespace) -> None:
     question_width = max(10, min(50, console.width - 10 - 8 * len(metric_cols)))
     table.add_column("pytanie", width=question_width, no_wrap=True, overflow="ellipsis")
     for col in metric_cols:
-        header = SHORT_HEADERS.get(col, col.replace("recall@", "R@"))
+        header = _header(col)
         # escape: „[n]” i „t[s]” rich wziąłby za znaczniki formatowania.
-        table.add_column(
-            escape(header), justify="right", no_wrap=True, min_width=max(4, len(header))
-        )
+        table.add_column(header, justify="right", no_wrap=True, min_width=max(4, len(header)))
     for row in results["rows"]:
         table.add_row(row["id"], row["question"], *(format_cell(row.get(c)) for c in metric_cols))
     table.add_section()
@@ -128,19 +214,88 @@ def cmd_eval(args: argparse.Namespace) -> None:
         *(format_cell(summary.get(c)) for c in metric_cols),
     )
     console.print(table)
+    print_group_table("Per kategoria", results.get("by_category", {}))
+    print_group_table("Per trudność", results.get("by_difficulty", {}))
     legend = "R@k = recall@k · MRR = mean reciprocal rank · ctx = znaki kontekstu w top-k"
     if args.generate:
         legend += (
-            " · odm. = poprawna odmowa/odpowiedź · cyt. = cytat z oczekiwanego źródła"
-            " · [n] = znaczniki źródeł w tekście"
+            " · odm. = poprawna odmowa/odpowiedź · fałsz.odm. = odmowa mimo odpowiedzi w dokumentach"
+            " · popr.odm. = poprawna odmowa · cyt. = cytat z oczekiwanego źródła"
+            " · cyt.R = część oczekiwanych źródeł zacytowana · [n] = znaczniki źródeł w tekście"
+            " · licz. = oczekiwana liczba w odpowiedzi · L-P/R/F1 = numery scen na liście"
         )
     console.print(f"[dim]{escape(legend)}[/]")
 
     label = f"{Path(args.golden).stem}_{args.collection or settings.collection}"
     if args.generate:
         label += f"_{settings.llm_model.replace(':', '-').replace('/', '-')}"
+    if args.sample:
+        label += f"_probka{len(items)}"
+    if interrupted:
+        label += "_czesciowe"
     path = save_results(results, settings, Path("eval/results"), label)
     console.print(f"[dim]Zapisano: {path}[/]")
+    if args.generate:
+        console.print(
+            f"[dim]Arkusz do oceny ręcznej: {path.with_name(path.stem + '_ocena.csv')} "
+            "(uzupełnij `ocena`, potem: uv run rag grade <plik>)[/]"
+        )
+
+
+def cmd_rescore(args: argparse.Namespace) -> None:
+    """Przelicza ocenę automatyczną (liczby, listy) na zapisanym przebiegu, bez pytania modelu."""
+    import json
+
+    from rag.eval import load_golden, rescore, to_markdown, write_grading_sheet
+
+    path = Path(args.results)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    new = rescore(data, load_golden(Path(args.golden)))
+    stem = path.stem.removesuffix("_rescored")
+    out = path.with_name(f"{stem}_rescored.json")
+    out.write_text(
+        json.dumps({"config": data.get("config", {}), **new}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    out.with_suffix(".md").write_text(to_markdown(new, out.stem), encoding="utf-8")
+    sheet = out.with_name(f"{out.stem}_ocena.csv")
+    write_grading_sheet(new, sheet)
+    print_group_table("Per kategoria", new["by_category"])
+    print_group_table("Per trudność", new["by_difficulty"])
+    console.print(f"[dim]Zapisano: {out}\nNowy arkusz do oceny: {sheet}[/]")
+
+
+def cmd_grade(args: argparse.Namespace) -> None:
+    from rag.eval import format_cell
+    from rag.grade import load_sheet, summarize_grades
+
+    summary = summarize_grades(load_sheet(Path(args.sheet)), use_auto=args.use_auto)
+    overall = summary["overall"]
+    console.print(
+        f"Ocenione: {overall['graded']}/{overall['n']} · poprawne: {overall['correct']} · "
+        f"dokładność: {format_cell(overall['accuracy'])}"
+    )
+    if overall["graded"] < overall["n"]:
+        console.print(
+            f"[yellow]Bez oceny: {overall['n'] - overall['graded']} pytań "
+            "(nie wchodzą do dokładności).[/]"
+        )
+    for title, key in (("Per kategoria", "by_category"), ("Per trudność", "by_difficulty")):
+        table = Table(title=title)
+        for header in ("grupa", "n", "ocenione", "poprawne", "dokładność"):
+            table.add_column(header, justify="left" if header == "grupa" else "right")
+        for name, s in summary[key].items():
+            table.add_row(
+                name, str(s["n"]), str(s["graded"]), str(s["correct"]), format_cell(s["accuracy"])
+            )
+        console.print(table)
+    if summary["causes"] or summary["wrong_without_cause"]:
+        console.print("[bold]Przyczyny błędów:[/]")
+        for cause, count in sorted(summary["causes"].items(), key=lambda kv: -kv[1]):
+            console.print(f"  {cause}: {count}")
+        if summary["wrong_without_cause"]:
+            console.print(f"  [yellow](bez przyczyny: {summary['wrong_without_cause']})[/]")
+    console.print(f"[dim]Poprawne odmowy: {summary['correct_refusals']}[/]")
 
 
 def cmd_check(_: argparse.Namespace) -> None:
@@ -185,8 +340,19 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("eval", help="ewaluacja na złotym zbiorze")
     p.add_argument("--golden", default="eval/golden_sample.jsonl")
     p.add_argument("--generate", action="store_true", help="oceniaj też odpowiedzi (wolniej)")
+    p.add_argument("--sample", type=int, help="tylko N pytań (równomiernie), do szybkiej próby")
     p.add_argument("--collection")
     p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("rescore", help="przelicz ocenę automatyczną na zapisanym przebiegu (.json)")
+    p.add_argument("results", help="plik eval/results/*.json z przebiegu z --generate")
+    p.add_argument("--golden", default="eval/pytania.jsonl")
+    p.set_defaults(func=cmd_rescore)
+
+    p = sub.add_parser("grade", help="podsumuj ręczną ocenę z arkusza CSV (eval/results/*_ocena.csv)")
+    p.add_argument("sheet", help="arkusz CSV z kolumną `ocena`")
+    p.add_argument("--use-auto", action="store_true", help="uzupełnij braki podpowiedzią ocena_auto")
+    p.set_defaults(func=cmd_grade)
 
     p = sub.add_parser("check", help="smoke test środowiska")
     p.set_defaults(func=cmd_check)
