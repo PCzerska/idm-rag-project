@@ -8,7 +8,8 @@ Trzy sposoby, od najmocniejszego do najsłabszego:
    Modele są trenowane do generowania poprawnych argumentów narzędzi, ale serwer może zignorować
    `tool_choice` – wtedy model odpowie zwykłym tekstem i traktujemy to jako błąd trybu.
 3. `prompt` – schemat wklejony do promptu + walidacja Pydantic + 1 ponowienie z opisem błędu.
-   Działa wszędzie, ale to tylko „prośba” – stąd walidacja.
+   Działa wszędzie, ale to tylko „prośba” – stąd walidacja. Przed ponowieniem próbujemy lokalnej
+   naprawy typowego błędu (`repair_quotes`: polski cudzysłów „…" zamknięty zwykłym `"`).
 
 `STRUCTURED_OUTPUT=auto` próbuje native, a gdy serwer go nie obsługuje – prompt. Tryb `tool`
 jest dostępny tylko jawnie (`STRUCTURED_OUTPUT=tool`): na Ollamie z MLX był wolniejszy od `prompt`
@@ -104,6 +105,42 @@ def extract_json(text: str) -> str:
     return text[start : end + 1]
 
 
+# „tekst"  ->  „tekst”: polski cudzysłów otwarty „ (U+201E), a zamknięty zwykłym " (U+0022), który
+# w JSON-ie kończy string. Pomijamy \" (poprawnie escapowany cudzysłów).
+_UNCLOSED_PL_QUOTE = re.compile(r'„([^"„”\n\\]*)(?<!\\)"')
+
+RETRY_HINT = (
+    'Cudzysłów wewnątrz tekstu zapisz jako „…” (polski) albo \\"…\\" – zwykły " kończy string JSON.'
+)
+
+
+def repair_quotes(text: str) -> str:
+    """Zamienia „tekst" na „tekst” – małe modele zamykają polski cudzysłów zwykłym `"`.
+
+    Przykład (qwen3.5, E1/E2): `{"answer": "Zdanie „to nie jest nasza sprawa" mówi…"}` – JSON
+    kończy się przedwcześnie. Ponowienie nie pomaga: przy temperature=0 model zwraca to samo.
+    Stosujemy TYLKO, gdy zwykłe parsowanie się nie udało (poprawny JSON zostaje nietknięty).
+    """
+    return _UNCLOSED_PL_QUOTE.sub("„\\1”", text)
+
+
+def parse_json_reply(content: str, schema: type[T]) -> T:
+    """JSON z odpowiedzi tekstowej → obiekt `schema`; przy błędzie jedna próba `repair_quotes`."""
+    text = extract_json(content)
+    try:
+        return schema.model_validate_json(text)
+    except ValidationError as err:
+        repaired = repair_quotes(text)
+        if repaired == text:
+            raise
+        try:
+            result = schema.model_validate_json(repaired)
+        except ValidationError:
+            raise err from None
+        log.info('structured output: naprawiono cudzysłów „…" w JSON-ie')
+        return result
+
+
 def _prompt(client: OpenAI, settings: Settings, messages: Messages, schema: type[T]) -> T:
     instruction = (
         "Odpowiedz WYŁĄCZNIE jednym obiektem JSON zgodnym z tym JSON Schema "
@@ -115,14 +152,21 @@ def _prompt(client: OpenAI, settings: Settings, messages: Messages, schema: type
         response = client.chat.completions.create(**chat_kwargs(settings), messages=attempt)
         content = response.choices[0].message.content or ""
         try:
-            return schema.model_validate_json(extract_json(content))
+            return parse_json_reply(content, schema)
         except (ValidationError, StructuredOutputError) as err:
             if retry == 1:
-                raise StructuredOutputError(f"niepoprawny JSON po ponowieniu: {err}") from err
+                # Początek surowej odpowiedzi – żeby dało się zobaczyć, co model zepsuł.
+                reason = err.errors()[0]["msg"] if isinstance(err, ValidationError) else str(err)
+                raise StructuredOutputError(
+                    f"niepoprawny JSON po ponowieniu ({reason}); odpowiedź modelu: {content[:300]!r}"
+                ) from err
             attempt = [
                 *attempt,
                 {"role": "assistant", "content": content},
-                {"role": "user", "content": f"Ten JSON jest niepoprawny: {err}. Popraw go."},
+                {
+                    "role": "user",
+                    "content": f"Ten JSON jest niepoprawny: {err}. {RETRY_HINT} Popraw go.",
+                },
             ]
     raise AssertionError("unreachable")
 
@@ -202,7 +246,7 @@ def complete_structured(
             continue
         except (ValidationError, StructuredOutputError, json.JSONDecodeError) as err:
             chain.append(f"{mode} nieudany")
-            errors.append(f"{mode}: {str(err)[:150]}")
+            errors.append(f"{mode}: {str(err)[:450]}")
             log.debug("structured output: %s – niepoprawna odpowiedź: %s", mode, err)
             continue
 

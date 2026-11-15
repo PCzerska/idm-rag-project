@@ -129,3 +129,42 @@ def test_extract_json():
     assert extract_json('Oto wynik: {"a": 1} dzięki') == '{"a": 1}'
     with pytest.raises(StructuredOutputError):
         extract_json("brak")
+
+
+# Surowe odpowiedzi qwen3.5 (4b i 9b) z E1/E2: polski cudzysłów zamknięty zwykłym ".
+BROKEN_QUOTE = (
+    '{\n  "answer": "Zdanie „to nie jest nasza sprawa" mówi Filip [3].",\n  "citations": [3]\n}'
+)
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ('"Zdanie „to nie jest nasza sprawa" mówi"', '"Zdanie „to nie jest nasza sprawa” mówi"'),
+        ('"Dzieje się „pod kościołem" [3]."', '"Dzieje się „pod kościołem” [3]."'),
+        ('"Poprawny „cytat” zostaje"', '"Poprawny „cytat” zostaje"'),
+        ('"Escapowany „cytat\\" zostaje"', '"Escapowany „cytat\\" zostaje"'),
+    ],
+)
+def test_repair_quotes(raw, expected):
+    assert structured.repair_quotes(raw) == expected
+
+
+def test_prompt_mode_repairs_quotes_without_second_call(settings):
+    client = FakeClient(IGNORED_TOOL, prompt_replies=(BROKEN_QUOTE,))
+    prompt_only = replace(settings, structured_output="prompt")
+    result, mode = complete_structured(client, prompt_only, [], Out)
+    assert result.answer == "Zdanie „to nie jest nasza sprawa” mówi Filip [3]."
+    assert client.calls == ["prompt"]  # naprawa lokalna, bez ponownego pytania modelu
+
+
+def test_valid_json_with_escaped_quote_is_not_repaired():
+    text = '{"answer": "Cytat „nauczkę\\" w tekście"}'
+    assert structured.parse_json_reply(text, Out).answer == 'Cytat „nauczkę" w tekście'
+
+
+def test_prompt_mode_error_shows_model_reply(settings):
+    client = FakeClient(IGNORED_TOOL, prompt_replies=("nie json",) * 2)
+    prompt_only = replace(settings, structured_output="prompt")
+    with pytest.raises(StructuredOutputError, match="odpowiedź modelu: 'nie json'"):
+        complete_structured(client, prompt_only, [], Out)
