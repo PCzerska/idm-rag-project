@@ -6,6 +6,8 @@
 DATA ?=
 Q ?=
 ARGS ?=
+# Złoty zbiór projektu (120 pytań o scenariusz); przykład ze startera: GOLDEN=eval/golden_sample.jsonl
+GOLDEN ?= eval/pytania.jsonl
 
 help: ## lista komend
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -37,8 +39,8 @@ ask: ## pytanie RAG: make ask Q="..."
 agent: ## agent z tool callingiem (interaktywnie albo Q="...")
 	uv run rag agent $(if $(Q),"$(Q)",) $(ARGS)
 
-eval: ## recall@k i MRR na złotym zbiorze (ARGS=--generate ocenia też odpowiedzi)
-	uv run rag eval $(ARGS)
+eval: ## recall@k i MRR na złotym zbiorze GOLDEN (ARGS=--generate ocenia też odpowiedzi)
+	uv run rag eval --golden $(GOLDEN) $(ARGS)
 
 reset-cache: ## wykryj tryb structured output od nowa (np. po aktualizacji Ollamy)
 	uv run rag reset-cache
@@ -47,5 +49,5 @@ test: ## testy jednostkowe (bez sieci)
 	uv run pytest -q
 
 lint: ## ruff
-	uv run ruff check src tests
-	uv run ruff format --check src tests
+	uv run ruff check src tests scripts
+	uv run ruff format --check src tests scripts
