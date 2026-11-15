@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Konwersja zestawu pytań (pytania_ministranci.jsonl) do formatu startera + kontrola źródeł.
 
-Wejście : eval/pytania_ministranci.jsonl  (pola: id, kategoria, trudnosc, pytanie, typ,
+Wejście : eval/pytania_ministranci.jsonl  (pola: id, kategoria, trudnosc, zbior, pytanie, typ,
           oczekiwane, zrodla[{scena, strona, fraza}], elementy)
 Wyjście : eval/pytania.jsonl              (format GoldItem: id, question, answer, source_ids,
-          tags, needs_review, elements, numbers)
+          tags, needs_review, elements, numbers, split)
 
 - source_ids = `scenariusz#s<scena>` (tak samo jak `prepared.source_ids_for_prepared`),
 - tags = [kategoria, trudnosc, typ] (kategoria jest pierwszym tagiem, jak w starym zestawie),
+- split = zbior (`dev` – eksperymenty, `test` – tylko pomiar końcowy; domyślnie `dev`),
 - każde źródło ma `fraza` z oryginalnego tekstu sceny. Skrypt sprawdza ją w tekście chunków:
   * sceny nie ma w indeksie, ale fraza jest w innym chunku (np. 117* scalone z 117A)
     -> źródło zostaje przepięte na ten chunk (komunikat „przepięto”),
@@ -16,9 +17,10 @@ Wyjście : eval/pytania.jsonl              (format GoldItem: id, question, answe
   * scena jest, ale frazy w jej chunku nie ma (parser coś zgubił lub zmienił tekst)
     -> ostrzeżenie „fraza nie znaleziona” (needs_review bez zmian; sprawdź ręcznie).
 
-  chcp 65001
-  python scripts/convert_questions.py --index data/processed/scenariusz.jsonl
+  uv run python scripts/convert_questions.py --force
+  (Windows: najpierw `chcp 65001`, żeby polskie znaki w komunikatach wyświetlały się poprawnie)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,12 +35,18 @@ REFUSAL_CATEGORIES = {"spoza_zakresu", "brak_w_dokumentach"}
 
 
 def read_jsonl(path: Path) -> list[dict]:
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [json.loads(line) for line in lines if line.strip()]
 
 
 def norm(text: str) -> str:
     """Małe litery, spójne cudzysłowy, jedna spacja – do porównywania fraz z tekstem chunków."""
-    text = text.replace("\u2019", "'").replace("\u201e", '"').replace("\u201d", '"').replace("\u201c", '"')
+    text = (
+        text.replace("\u2019", "'")
+        .replace("\u201e", '"')
+        .replace("\u201d", '"')
+        .replace("\u201c", '"')
+    )
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
@@ -110,9 +118,8 @@ def convert(q: dict, index: Index | None, fallback: list[str], notes: dict) -> d
             else:
                 missing.append(scene)
 
-    used_fallback = False
     if not ids and not missing and q["kategoria"] not in REFUSAL_CATEGORIES:
-        ids, used_fallback = [sid(s) for s in fallback], True
+        ids = [sid(s) for s in fallback]
         notes["fallback"].append(q["id"])
     for scene in missing:
         add(scene)
@@ -125,6 +132,7 @@ def convert(q: dict, index: Index | None, fallback: list[str], notes: dict) -> d
         "needs_review": bool(missing),
         "elements": [str(e) for e in q.get("elementy", [])],
         "numbers": expected_numbers(q),
+        "split": q.get("zbior", "dev"),
         "_missing": missing,
     }
 
@@ -135,13 +143,15 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--in", dest="src", default="eval/pytania_ministranci.jsonl")
     ap.add_argument("--out", default="eval/pytania.jsonl")
-    ap.add_argument("--index", default="data/processed/scenariusz.jsonl")
+    ap.add_argument("--index", default="data/processed/chunks.jsonl", help="wynik prepare_data.py")
     ap.add_argument("--force", action="store_true", help="nadpisz istniejące --out")
     a = ap.parse_args()
 
     src, out, idx_path = ROOT / a.src, ROOT / a.out, ROOT / a.index
     if out.exists() and not a.force:
-        sys.exit(f"{out} już istnieje – zmień mu nazwę (np. na pytania_stare.jsonl) albo użyj --force.")
+        sys.exit(
+            f"{out} już istnieje – zmień mu nazwę (np. na pytania_stare.jsonl) albo użyj --force."
+        )
     items = read_jsonl(src)
 
     index: Index | None = None
@@ -160,11 +170,14 @@ def main() -> None:
     flagged = [(r["id"], r["_missing"], r["question"]) for r in converted if r["_missing"]]
     for r in converted:
         r.pop("_missing")
-    out.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in converted) + "\n", encoding="utf-8")
+    out.write_text(
+        "\n".join(json.dumps(r, ensure_ascii=False) for r in converted) + "\n", encoding="utf-8"
+    )
 
     print(f"Zapisano {len(converted)} pytań -> {out}")
     print("trudność :", dict(Counter(r["tags"][1] for r in converted)))
     print("kategoria:", dict(Counter(r["tags"][0] for r in converted)))
+    print("zbiór    :", dict(Counter(r["split"] for r in converted)))
     for qid in notes["fallback"]:
         print(f"UWAGA {qid}: brak źródeł (pytanie o cały scenariusz) – przyjęto {fallback}")
     if notes["remap"]:
