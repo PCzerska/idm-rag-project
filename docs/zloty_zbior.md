@@ -75,7 +75,7 @@ Wszystkie są oparte wyłącznie na scenariuszu, a scenariusz jest jedynym źró
 i złotego zbioru, więc rozbieżność z tabelą ich nie dotyczy
 ([decyzja 2026-11-15](notatki_dane.md#decyzja-rola-dokumentów-2026-11-15)).
 
-**Zbiór testowy** – jeszcze nie istnieje ([zasady](ewaluacja.md#podział-dev--test)).
+**Zbiór testowy** – jeszcze nie istnieje ([zasady](ewaluacja.md#zbiór-testowy--jak-go-napisać)).
 
 ## Wyniki E1
 

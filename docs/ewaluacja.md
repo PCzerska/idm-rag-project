@@ -73,13 +73,77 @@ Pole `zbior` (w `pytania.jsonl`: `split`) mówi, do czego służy pytanie:
 
 - `dev` – eksperymenty: na tych pytaniach oglądamy błędy i poprawiamy system. Obecnie
   **wszystkie 120 pytań**.
-- `test` – tylko pomiar końcowy. Zbioru testowego jeszcze nie ma; zasady:
-  - pytania testowe piszemy **zanim** zaczniemy poprawiać prompt i retrieval pod konkretne błędy
-    z dev, najlepiej osoba, która tych błędów nie analizowała, z podobnym rozkładem kategorii;
-  - po napisaniu zbiór jest zamrożony – nie oglądamy jego błędów i nie stroimy pod niego systemu;
-  - uruchamiamy go raz na wybranej konfiguracji (i na E1 jako odniesienie).
+- `test` – tylko pomiar końcowy. Zbioru testowego jeszcze nie ma – wymagania niżej.
 
-Wybór części: `make eval ARGS="--split dev"`. Bez `--split` liczone są wszystkie pytania.
+Wybór części: `make eval ARGS="--split dev"`. Bez `--split` liczone są wszystkie pytania –
+po dopisaniu zbioru testowego eksperymenty uruchamiaj z `--split dev`.
+
+### Zbiór testowy – jak go napisać
+
+**Kto i kiedy**
+
+- **Przed** strojeniem promptu i retrievalu pod błędy z dev.
+- Najlepiej osoba, która **nie analizowała błędów** E1/E2 (arkuszy oceny, omówienia w
+  [zloty_zbior.md](zloty_zbior.md)) – inaczej pytania nieświadomie ominą albo wyolbrzymią znane
+  słabości systemu.
+- Po napisaniu zbiór jest **zamrożony**: nie oglądamy jego błędów, nie poprawiamy pytań pod
+  wyniki, uruchamiamy go raz – na końcowej konfiguracji i na konfiguracji E1 jako odniesieniu
+  (`make eval ARGS="--generate --split test"`).
+
+**Treść**
+
+- Jedyne źródło: **scenariusz** (pytania, odpowiedzi, źródła) –
+  [decyzja](notatki_dane.md#decyzja-rola-dokumentów-2026-11-15).
+- **Nowe pytania, nie parafrazy pytań z dev** – inne sceny albo inne fakty z tych samych scen.
+  Parafraza pytania z dev to wyciek: test mierzyłby to samo co dev.
+- Te same kategorie i poziomy trudności co w dev (opis kategorii:
+  [zloty_zbior.md](zloty_zbior.md#kategorie)), podobny rozkład – propozycja na ~40 pytań:
+
+| kategoria | dev | test | trudność |
+|---|---|---|---|
+| `fakt_jedna_scena` | 20 | 7 | `latwe` |
+| `potoczne_parafrazy` | 10 | 3 | `latwe` |
+| `kilka_zrodel` | 30 | 10 | `srednie` / `trudne` |
+| `ciaglosc_przedmiotu` | 20 | 7 | `srednie` / `trudne` |
+| `agregacja_liczenie` | 20 | 7 | `srednie` / `trudne` |
+| `falszywa_przeslanka` | 5 | 2 | `brak` |
+| `brak_w_dokumentach` | 10 | 3 | `brak` |
+| `spoza_zakresu` | 5 | 1 | `brak` |
+
+  Pytania odmowne (ostatnie trzy wiersze) trzymamy w podobnej proporcji – bez nich nie zmierzymy
+  poprawnych odmów.
+
+**Format** – rekordy dopisujemy na końcu `eval/pytania_ministranci.jsonl`:
+
+```json
+{"id": "q121", "kategoria": "fakt_jedna_scena", "trudnosc": "latwe", "zbior": "test",
+ "pytanie": "…", "typ": "fakt", "oczekiwane": "…",
+ "zrodla": [{"dokument": "scenariusz", "scena": "12", "strona": 15,
+             "fraza": "dosłowny fragment tekstu sceny"}]}
+```
+
+| pole | wymaganie |
+|---|---|
+| `id` | kontynuacja numeracji: `q121`, `q122`, … |
+| `zbior` | `"test"` |
+| `pytanie`, `oczekiwane` | unikalne w całym pliku (sprawdza `make test`) |
+| `zrodla[].fraza` | **dosłowny** fragment tekstu sceny – konwersja sprawdza go w chunkach |
+| `typ` | `fakt` / `wyjasnienie` / `lista` / `liczba` / `odmowa_brak` / `odmowa_spoza` / `odmowa_falszywa_przeslanka` |
+| `liczba` | `oczekiwane` zaczyna się od liczby (z niej liczony jest `count_ok`) albo liczby w `elementy` |
+| `lista` | `elementy` z numerami scen (z nich `list_p/r/f1`) |
+| `brak_w_dokumentach`, `spoza_zakresu` | puste `zrodla` – oczekiwana odmowa |
+| `falszywa_przeslanka` | **ze** źródłami (sceny, które pozwalają skorygować przesłankę), `oczekiwane` zaczyna się od `ODMOWA/KOREKTA:` |
+
+**Sprawdzenie**
+
+```bash
+uv run python scripts/convert_questions.py --force   # na końcu: „Wszystkie źródła i frazy zgodne z indeksem.”
+make test                                            # schemat, unikalność, kategorie, źródła w indeksie
+```
+
+`make test` sprawdza m.in., że rozkład dev się nie zmienił (120 pytań), pytania test używają
+znanych kategorii i trudności, a zbiór test ma zarówno pytania z odpowiedzią, jak i odmowne.
+Rozkład kategorii w test (tabela wyżej) to zalecenie – testy go nie wymuszają.
 
 ## Krok 2: pomiar
 

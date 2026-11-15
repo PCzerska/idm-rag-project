@@ -29,7 +29,7 @@ ewaluacja: [ewaluacja.md](ewaluacja.md) (jak mierzyć), [zloty_zbior.md](zloty_z
         (oznaczone osobno – mierzą ograniczenie top-k), parafrazy potoczne, odmowy;
   - [x] podział: pole `zbior`/`split`, wszystkie 120 pytań = `dev`;
   - [ ] **zbiór `test`** – napisać przed strojeniem pod błędy z dev (zasady:
-        [ewaluacja.md](ewaluacja.md#podział-dev--test));
+        [ewaluacja.md](ewaluacja.md#zbiór-testowy--jak-go-napisać));
   - [x] **źródło: tylko scenariusz** – inne dokumenty produkcji nie są używane
         ([decyzja](notatki_dane.md#decyzja-rola-dokumentów-2026-11-15)); 19 pytań o sceny z listy
         rozbieżności tabela ↔ scenariusz (np. `40A`, `84B`, `103A`, `117*`) zostaje;
