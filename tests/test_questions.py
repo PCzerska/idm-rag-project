@@ -48,14 +48,39 @@ def test_unique_ids_and_questions(items):
 
 
 @needs_questions
-def test_difficulty_distribution(items):
-    """Projekt: 30 łatwych, 30 średnich, 40 trudnych, 20 bez odpowiedzi (=120)."""
-    assert Counter(q["tags"][1] for q in items) == {
+def test_dev_distribution(items):
+    """Zbiór dev: 30 łatwych, 30 średnich, 40 trudnych, 20 bez odpowiedzi (=120).
+
+    Pytania `test` dopisywane później nie zmieniają dev – stąd filtr po `split`.
+    """
+    dev = [q for q in items if q.get("split") == "dev"]
+    assert Counter(q["tags"][1] for q in dev) == {
         "latwe": 30,
         "srednie": 30,
         "trudne": 40,
         "brak": 20,
     }
+
+
+@needs_questions
+def test_known_categories_and_difficulties(items):
+    """Pytania test używają tych samych kategorii i poziomów trudności co dev."""
+    dev = [q for q in items if q.get("split") == "dev"]
+    categories = {q["tags"][0] for q in dev}
+    difficulties = {q["tags"][1] for q in dev}
+    for q in items:
+        assert q["tags"][0] in categories, f"{q['id']}: nieznana kategoria {q['tags'][0]!r}"
+        assert q["tags"][1] in difficulties, f"{q['id']}: nieznana trudność {q['tags'][1]!r}"
+
+
+@needs_questions
+def test_test_split_has_answers_and_refusals(items):
+    """Zbiór test (jeśli już jest) musi mieć pytania z odpowiedzią i pytania odmowne."""
+    test = [q for q in items if q.get("split") == "test"]
+    if not test:
+        pytest.skip("brak pytań test")
+    assert any(q["source_ids"] for q in test), "test bez pytań z odpowiedzią w scenariuszu"
+    assert any(q["tags"][0] in REFUSAL_CATEGORIES for q in test), "test bez pytań odmownych"
 
 
 @needs_questions
