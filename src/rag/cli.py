@@ -101,13 +101,14 @@ SHORT_HEADERS = {
     "list_p": "L-P",
     "list_r": "L-R",
     "list_f1": "L-F1",
+    "gen_error": "bł.gen.",
     "latency_s": "t[s]",
 }
 # Tabela per pytanie ma tylko podstawowe kolumny; reszta jest w tabelach grup i w pliku .md.
 ROW_METRICS = ("mrr", "ctx_chars", "refusal_ok", "citation_hit", "inline_cited", "latency_s")
 GROUP_METRICS = (
     "mrr", "refusal_ok", "false_refusal", "correct_refusal", "citation_hit", "cited_recall",
-    "count_ok", "list_f1", "latency_s",
+    "count_ok", "list_f1", "gen_error", "latency_s",
 )  # fmt: skip
 
 
@@ -137,22 +138,40 @@ def print_group_table(title: str, groups: dict[str, dict]) -> None:
 
 
 def cmd_eval(args: argparse.Namespace) -> None:
+    from dataclasses import replace
+
     from rag.eval import (
         DEFAULT_KS,
+        describe_experiment,
         evaluate,
+        experiment_label,
         format_cell,
         load_golden,
         results_from_rows,
         save_results,
+        structured_modes,
     )
+    from rag.store import describe_collection, get_client
 
     settings = get_settings()
-    items = load_golden(Path(args.golden))
+    if args.collection:
+        settings = replace(settings, collection=args.collection)
+    items = load_golden(Path(args.golden), split=args.split)
+    index = describe_collection(get_client(settings.qdrant_url), settings.collection)
+    experiment = describe_experiment(
+        settings, index, args.golden, split=args.split, generate=args.generate
+    )
+    console.print(
+        f"[dim]Kolekcja {settings.collection}: {index['points']} chunków · "
+        f"chunking {experiment['chunking']} · embeddingi {experiment['index_embed_model']}[/]"
+    )
     if args.sample and args.sample < len(items):
         # równomiernie rozłożona próbka (zbiór jest uporządkowany od łatwych do trudnych)
         step = len(items) / args.sample
         items = [items[int(i * step)] for i in range(args.sample)]
-        console.print(f"[yellow]Próbka: {len(items)} pytań co ~{step:.1f}-te (nie pełny pomiar).[/]")
+        console.print(
+            f"[yellow]Próbka: {len(items)} pytań co ~{step:.1f}-te (nie pełny pomiar).[/]"
+        )
 
     collected: list[dict] = []
     started = time.perf_counter()
@@ -167,6 +186,7 @@ def cmd_eval(args: argparse.Namespace) -> None:
         )
 
     interrupted = False
+    failure: Exception | None = None
     try:
         results = evaluate(
             items,
@@ -176,15 +196,19 @@ def cmd_eval(args: argparse.Namespace) -> None:
             collection=args.collection,
             on_row=progress,
         )
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, Exception) as err:
+        # Ctrl+C albo awaria (np. Ollama przestała odpowiadać): zapisz to, co już policzone.
         if not collected:
             raise
         interrupted = True
+        failure = None if isinstance(err, KeyboardInterrupt) else err
+        reason = "Przerwano" if isinstance(err, KeyboardInterrupt) else f"Błąd ({err})"
         console.print(
-            f"[yellow]Przerwano po {len(collected)}/{len(items)} pytaniach – "
+            f"[yellow]{escape(reason)} po {len(collected)}/{len(items)} pytaniach – "
             "zapisuję wyniki częściowe.[/]"
         )
         results = results_from_rows(collected, DEFAULT_KS)
+    experiment["structured_modes"] = structured_modes(results["rows"])
     summary = results["summary"]
     # Kolumny = metryki policzone w tym przebiegu (bez --generate nie ma metryk odpowiedzi).
     metric_cols = [
@@ -195,7 +219,8 @@ def cmd_eval(args: argparse.Namespace) -> None:
         and (c.startswith("recall@") or c in ROW_METRICS)
     ]
     table = Table(
-        title=f"Eval: {args.golden} · {settings.llm_model} · {args.collection or settings.collection}"
+        title=f"Eval: {args.golden} · {settings.collection} · {experiment['chunking']}"
+        + (f" · {settings.llm_model}" if args.generate else "")
     )
     table.add_column("id", no_wrap=True, min_width=7)
     # Kolumna z pytaniem dostaje to, co zostaje po metrykach (pełne pytania są w pliku .md).
@@ -223,23 +248,30 @@ def cmd_eval(args: argparse.Namespace) -> None:
             " · popr.odm. = poprawna odmowa · cyt. = cytat z oczekiwanego źródła"
             " · cyt.R = część oczekiwanych źródeł zacytowana · [n] = znaczniki źródeł w tekście"
             " · licz. = oczekiwana liczba w odpowiedzi · L-P/R/F1 = numery scen na liście"
+            " · bł.gen. = brak poprawnej odpowiedzi modelu (zepsuty JSON)"
         )
     console.print(f"[dim]{escape(legend)}[/]")
 
-    label = f"{Path(args.golden).stem}_{args.collection or settings.collection}"
-    if args.generate:
-        label += f"_{settings.llm_model.replace(':', '-').replace('/', '-')}"
+    label = experiment_label(experiment, args.golden)
     if args.sample:
         label += f"_probka{len(items)}"
     if interrupted:
         label += "_czesciowe"
-    path = save_results(results, settings, Path("eval/results"), label)
+    path = save_results(results, settings, Path("eval/results"), label, experiment)
     console.print(f"[dim]Zapisano: {path}[/]")
     if args.generate:
         console.print(
             f"[dim]Arkusz do oceny ręcznej: {path.with_name(path.stem + '_ocena.csv')} "
             "(uzupełnij `ocena`, potem: uv run rag grade <plik>)[/]"
         )
+    errors = sum(bool(r.get("gen_error")) for r in results["rows"])
+    if errors:
+        console.print(
+            f"[yellow]{errors} pytań bez poprawnej odpowiedzi modelu (gen_error) – liczone jako "
+            "nieudane; szczegóły w polu `error` w pliku .json.[/]"
+        )
+    if failure is not None:
+        raise failure
 
 
 def cmd_rescore(args: argparse.Namespace) -> None:
@@ -253,13 +285,16 @@ def cmd_rescore(args: argparse.Namespace) -> None:
     new = rescore(data, load_golden(Path(args.golden)))
     stem = path.stem.removesuffix("_rescored")
     out = path.with_name(f"{stem}_rescored.json")
+    experiment = data.get("experiment")
+    head = {"experiment": experiment} if experiment else {}
     out.write_text(
-        json.dumps({"config": data.get("config", {}), **new}, ensure_ascii=False, indent=2),
+        json.dumps({**head, "config": data.get("config", {}), **new}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    out.with_suffix(".md").write_text(to_markdown(new, out.stem), encoding="utf-8")
+    out.with_suffix(".md").write_text(to_markdown(new, out.stem, experiment), encoding="utf-8")
     sheet = out.with_name(f"{out.stem}_ocena.csv")
-    write_grading_sheet(new, sheet)
+    top_k = (experiment or {}).get("top_k") or data.get("config", {}).get("top_k")
+    write_grading_sheet(new, sheet, top_k)
     print_group_table("Per kategoria", new["by_category"])
     print_group_table("Per trudność", new["by_difficulty"])
     console.print(f"[dim]Zapisano: {out}\nNowy arkusz do oceny: {sheet}[/]")
@@ -338,7 +373,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_agent)
 
     p = sub.add_parser("eval", help="ewaluacja na złotym zbiorze")
-    p.add_argument("--golden", default="eval/golden_sample.jsonl")
+    p.add_argument("--golden", default="eval/pytania.jsonl", help="złoty zbiór (JSONL)")
+    p.add_argument("--split", help="tylko pytania z tej części zbioru (np. dev, test)")
     p.add_argument("--generate", action="store_true", help="oceniaj też odpowiedzi (wolniej)")
     p.add_argument("--sample", type=int, help="tylko N pytań (równomiernie), do szybkiej próby")
     p.add_argument("--collection")
@@ -349,9 +385,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--golden", default="eval/pytania.jsonl")
     p.set_defaults(func=cmd_rescore)
 
-    p = sub.add_parser("grade", help="podsumuj ręczną ocenę z arkusza CSV (eval/results/*_ocena.csv)")
+    p = sub.add_parser(
+        "grade", help="podsumuj ręczną ocenę z arkusza CSV (eval/results/*_ocena.csv)"
+    )
     p.add_argument("sheet", help="arkusz CSV z kolumną `ocena`")
-    p.add_argument("--use-auto", action="store_true", help="uzupełnij braki podpowiedzią ocena_auto")
+    p.add_argument(
+        "--use-auto", action="store_true", help="uzupełnij braki podpowiedzią ocena_auto"
+    )
     p.set_defaults(func=cmd_grade)
 
     p = sub.add_parser("check", help="smoke test środowiska")

@@ -1,5 +1,5 @@
 """Testy rozszerzonej ewaluacji (bez sieci): ocena liczb i list, grupy, arkusz oceny ręcznej."""
-import csv
+
 from types import SimpleNamespace
 
 import pytest
@@ -14,8 +14,13 @@ def fake_hit(text="t", source_ids=()):
 
 
 def item(**kw):
-    base = dict(id="q1", question="?", answer="x", source_ids=["scenariusz#s1"],
-                tags=["kat", "latwe", "fakt"])
+    base = dict(
+        id="q1",
+        question="?",
+        answer="x",
+        source_ids=["scenariusz#s1"],
+        tags=["kat", "latwe", "fakt"],
+    )
     base.update(kw)
     return ev.GoldItem(**base)
 
@@ -83,14 +88,19 @@ def test_evaluate_groups_and_refusals(monkeypatch):
         item(id="b", source_ids=["scenariusz#s2"], tags=["fakt", "latwe", "fakt"]),
         item(id="c", source_ids=[], tags=["brak_w_dokumentach", "brak", "odmowa_brak"]),
         item(id="d", source_ids=[], tags=["spoza_zakresu", "brak", "odmowa_spoza"]),
-        item(id="e", source_ids=["scenariusz#s3"], tags=["agregacja", "trudne", "liczba"],
-             numbers=[4], elements=["3"]),
+        item(
+            id="e",
+            source_ids=["scenariusz#s3"],
+            tags=["agregacja", "trudne", "liczba"],
+            numbers=[4],
+            elements=["3"],
+        ),
     ]
     answers = {
-        "a": fake_result("Tak [1]", ["scenariusz#s1"]),          # poprawnie
-        "b": fake_result("Nie wiem", []),                         # fałszywa odmowa
+        "a": fake_result("Tak [1]", ["scenariusz#s1"]),  # poprawnie
+        "b": fake_result("Nie wiem", []),  # fałszywa odmowa
         "c": fake_result("Wymyślona odpowiedź [1]", ["scenariusz#s9"]),  # halucynacja
-        "d": fake_result("Brak informacji", []),                  # poprawna odmowa
+        "d": fake_result("Brak informacji", []),  # poprawna odmowa
         "e": fake_result("Są 4 sceny [1]", ["scenariusz#s3"]),
     }
     order = iter(items)
@@ -102,22 +112,28 @@ def test_evaluate_groups_and_refusals(monkeypatch):
         return [fake_hit("abc", src)] if src else [fake_hit("zzz", ["scenariusz#s9"])]
 
     monkeypatch.setattr(ev, "retrieve", fake_retrieve)
-    monkeypatch.setattr(ev, "answer_question", lambda q, s, k=None, collection=None: answers[current["item"].id])
+    monkeypatch.setattr(
+        ev, "answer_question", lambda q, s, k=None, collection=None: answers[current["item"].id]
+    )
 
     settings = SimpleNamespace(top_k=5, llm_model="m", collection="c")  # evaluate używa tylko top_k
     res = ev.evaluate(items, settings, generate=True)
     rows = {r["id"]: r for r in res["rows"]}
-    assert rows["a"]["refusal_ok"] and rows["a"]["false_refusal"] is False and rows["a"]["citation_hit"]
+    assert (
+        rows["a"]["refusal_ok"]
+        and rows["a"]["false_refusal"] is False
+        and rows["a"]["citation_hit"]
+    )
     assert rows["b"]["false_refusal"] is True and not rows["b"]["refusal_ok"]
-    assert rows["c"]["correct_refusal"] is False      # odpowiedział, choć nie powinien
+    assert rows["c"]["correct_refusal"] is False  # odpowiedział, choć nie powinien
     assert rows["d"]["correct_refusal"] is True
     assert rows["e"]["count_ok"] is True
-    assert "recall@1" not in rows["c"]                  # brak źródeł -> bez recall
+    assert "recall@1" not in rows["c"]  # brak źródeł -> bez recall
 
     s = res["summary"]
     assert s["questions"] == 5
-    assert s["false_refusal"] == pytest.approx(1 / 3, abs=1e-3)   # b z (a, b, e)
-    assert s["correct_refusal"] == 0.5                             # d z (c, d)
+    assert s["false_refusal"] == pytest.approx(1 / 3, abs=1e-3)  # b z (a, b, e)
+    assert s["correct_refusal"] == 0.5  # d z (c, d)
     assert set(res["by_difficulty"]) == {"latwe", "brak", "trudne"}
     assert res["by_difficulty"]["latwe"]["false_refusal"] == 0.5
     assert res["by_category"]["agregacja"]["count_ok"] == 1.0
@@ -138,19 +154,46 @@ def test_auto_grade():
 
 def test_sheet_roundtrip_and_grade_summary(tmp_path):
     rows = [
-        {"id": "a", "question": "Pytanie ąę?", "expected": "x", "answer": "y",
-         "cited_sources": ["scenariusz#s1"], "expected_sources": ["scenariusz#s1", "scenariusz#s2"],
-         "category": "fakt", "difficulty": "latwe", "kind": "fakt", "false_refusal": False},
-        {"id": "b", "question": "Pytanie 2", "expected": "x", "answer": "Brak",
-         "cited_sources": [], "expected_sources": [],
-         "category": "spoza_zakresu", "difficulty": "brak", "kind": "odmowa_spoza", "correct_refusal": True},
-        {"id": "c", "question": "Pytanie 3", "expected": "x", "answer": "Nie wiem",
-         "cited_sources": [], "expected_sources": ["scenariusz#s5"],
-         "category": "fakt", "difficulty": "latwe", "kind": "fakt", "false_refusal": True},
+        {
+            "id": "a",
+            "question": "Pytanie ąę?",
+            "expected": "x",
+            "answer": "y",
+            "cited_sources": ["scenariusz#s1"],
+            "expected_sources": ["scenariusz#s1", "scenariusz#s2"],
+            "category": "fakt",
+            "difficulty": "latwe",
+            "kind": "fakt",
+            "false_refusal": False,
+        },
+        {
+            "id": "b",
+            "question": "Pytanie 2",
+            "expected": "x",
+            "answer": "Brak",
+            "cited_sources": [],
+            "expected_sources": [],
+            "category": "spoza_zakresu",
+            "difficulty": "brak",
+            "kind": "odmowa_spoza",
+            "correct_refusal": True,
+        },
+        {
+            "id": "c",
+            "question": "Pytanie 3",
+            "expected": "x",
+            "answer": "Nie wiem",
+            "cited_sources": [],
+            "expected_sources": ["scenariusz#s5"],
+            "category": "fakt",
+            "difficulty": "latwe",
+            "kind": "fakt",
+            "false_refusal": True,
+        },
     ]
     path = tmp_path / "sheet.csv"
     ev.write_grading_sheet({"rows": rows}, path)
-    assert path.read_bytes().startswith(b"\xef\xbb\xbf")        # BOM dla Excela
+    assert path.read_bytes().startswith(b"\xef\xbb\xbf")  # BOM dla Excela
     sheet = load_sheet(path)
     assert sheet[0]["pytanie"] == "Pytanie ąę?" and sheet[0]["cytowane_sceny"] == "1"
     assert sheet[0]["oczekiwane_sceny"] == "1, 2"
@@ -175,8 +218,17 @@ def test_invalid_grade_is_rejected():
     with pytest.raises(ValueError):
         final_grade({"id": "x", "ocena": "dobrze"})
     with pytest.raises(ValueError):
-        summarize_grades([{"id": "x", "kategoria": "k", "trudnosc": "t",
-                           "ocena": "bledna", "przyczyna_bledu": "nie wiem"}])
+        summarize_grades(
+            [
+                {
+                    "id": "x",
+                    "kategoria": "k",
+                    "trudnosc": "t",
+                    "ocena": "bledna",
+                    "przyczyna_bledu": "nie wiem",
+                }
+            ]
+        )
 
 
 def test_on_row_callback_and_partial_results(monkeypatch):
@@ -207,9 +259,35 @@ def test_spelled_numbers():
 
 def test_rescore_changes_only_auto_metrics():
     gold = item(id="q", tags=["agregacja", "trudne", "liczba"], numbers=[3])
-    data = {"rows": [{"id": "q", "answer": "Są trzy sceny.", "category": "agregacja",
-                      "difficulty": "trudne", "count_ok": False}]}
+    data = {
+        "rows": [
+            {
+                "id": "q",
+                "answer": "Są trzy sceny.",
+                "category": "agregacja",
+                "difficulty": "trudne",
+                "count_ok": False,
+            }
+        ]
+    }
     out = ev.rescore(data, [gold])
-    assert data["rows"][0]["answer"] == "Są trzy sceny."      # odpowiedź bez zmian
-    assert data["rows"][0]["count_ok"] is True                # ocena automatyczna przeliczona
+    assert data["rows"][0]["answer"] == "Są trzy sceny."  # odpowiedź bez zmian
+    assert data["rows"][0]["count_ok"] is True  # ocena automatyczna przeliczona
     assert out["summary"]["count_ok"] == 1.0
+
+
+def test_rescore_recomputes_refusals_from_text():
+    """Odmowa z doklejonym cytatem: po rescore liczy się jako poprawna odmowa, bez cytatu."""
+    gold = item(id="r", source_ids=[], tags=["brak_w_dokumentach", "brak", "odmowa_brak"])
+    row = {
+        "id": "r",
+        "answer": "W podanym kontekście nie ma informacji o nazwisku [1][2].",
+        "citations": [1, 2],
+        "cited_sources": ["scenariusz#s1"],
+        "category": "brak_w_dokumentach",
+        "difficulty": "brak",
+        "correct_refusal": False,
+    }
+    ev.rescore({"rows": [row]}, [gold])
+    assert row["correct_refusal"] is True and row["refusal_ok"] and row["refusal_in_text"]
+    assert ev.auto_grade(row) == ("poprawna_odmowa", "")

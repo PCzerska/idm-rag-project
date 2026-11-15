@@ -87,6 +87,40 @@ def upsert_chunks(
         client.upsert(collection_name=collection, points=points[i : i + 256])
 
 
+def describe_collection(client: QdrantClient, collection: str) -> dict:
+    """Co faktycznie jest w kolekcji: liczba chunków oraz wartości `chunking` i `embed_model`.
+
+    Czytamy payload, a nie `.env` – ustawienie CHUNKING nie mówi nic o gotowych chunkach z
+    `prepare_data.py` (`chunking="prepared"`), a kolekcja mogła powstać przy innych ustawieniach.
+    """
+    if not client.collection_exists(collection):
+        raise RuntimeError(f"Kolekcja {collection!r} nie istnieje. Uruchom najpierw: make ingest")
+    chunking: dict[str, int] = {}
+    embed_models: dict[str, int] = {}
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=collection,
+            limit=256,
+            offset=offset,
+            with_payload=["chunking", "embed_model"],
+            with_vectors=False,
+        )
+        for p in points:
+            payload = p.payload or {}
+            name = str(payload.get("chunking", "?"))
+            chunking[name] = chunking.get(name, 0) + 1
+            model = str(payload.get("embed_model", "?"))
+            embed_models[model] = embed_models.get(model, 0) + 1
+        if offset is None:
+            break
+    return {
+        "points": sum(chunking.values()),
+        "chunking": chunking,
+        "embed_model": embed_models,
+    }
+
+
 def search(
     client: QdrantClient,
     collection: str,

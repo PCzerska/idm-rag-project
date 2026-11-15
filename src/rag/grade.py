@@ -32,7 +32,9 @@ def final_grade(row: dict[str, str], use_auto: bool = False) -> str | None:
     manual = (row.get("ocena") or "").strip().lower()
     if manual:
         if manual not in GRADES:
-            raise ValueError(f"{row.get('id')}: nieznana ocena „{manual}” (dozwolone: {', '.join(GRADES)})")
+            raise ValueError(
+                f"{row.get('id')}: nieznana ocena „{manual}” (dozwolone: {', '.join(GRADES)})"
+            )
         return manual
     auto = (row.get("ocena_auto") or "").strip().lower()
     return auto if use_auto and auto in GRADES else None
@@ -43,7 +45,9 @@ def _cause(row: dict[str, str], use_auto: bool) -> str:
     if not cause and use_auto and not (row.get("ocena") or "").strip():
         cause = (row.get("przyczyna_auto") or "").strip().lower()
     if cause and cause not in CAUSES:
-        raise ValueError(f"{row.get('id')}: nieznana przyczyna „{cause}” (dozwolone: {', '.join(CAUSES)})")
+        raise ValueError(
+            f"{row.get('id')}: nieznana przyczyna „{cause}” (dozwolone: {', '.join(CAUSES)})"
+        )
     return cause
 
 
