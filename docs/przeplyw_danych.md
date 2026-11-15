@@ -23,7 +23,7 @@ data/processed/chunks.jsonl  (+ raport.txt)
    │    7. embeddings.embed_documents
    │    8. store.upsert_chunks      wektor „dense” + payload
    ▼
-Qdrant, kolekcja z .env (COLLECTION)
+Qdrant, kolekcja scenariusz_sceny (COLLECTION w .env albo --collection)
 ```
 
 Tylko scenariusz trafia do indeksu. Pozostałe dokumenty produkcji (tabela inscenizacyjna,
@@ -33,7 +33,7 @@ listy, spis obiektów…) nie są przetwarzane – służą do budowy złotego z
 
 ```bash
 uv run python prepare_data.py --in data/raw --out data/processed
-make ingest DATA=data/processed/chunks.jsonl ARGS=--recreate
+make ingest DATA=data/processed/chunks.jsonl ARGS="--collection scenariusz_sceny --recreate"
 ```
 
 - `--in` – katalog ze scenariuszem; plik jest wybierany po nazwie (`scenariusz` albo
@@ -42,6 +42,10 @@ make ingest DATA=data/processed/chunks.jsonl ARGS=--recreate
   rekurencyjnie cały `data/` – także PDF z `data/raw/` (parserem startera, po stronach) i pliki
   demo z `data/sample/`.
 - `--recreate` czyści kolekcję przed zapisem.
+- Kolekcja projektu to `scenariusz_sceny` (140 chunków, `chunking=prepared`). Domyślna kolekcja
+  startera (`COLLECTION=docs` w `.env.example`) to inny indeks – pomiar na niej nie jest
+  porównywalny z E1. Ustaw `COLLECTION=scenariusz_sceny` w `.env` albo podawaj `--collection`;
+  `rag eval` wypisuje na starcie, co jest w kolekcji ([ewaluacja.md](ewaluacja.md#krok-0-indeks-na-którym-mierzymy)).
 
 ## Etap 1: odczyt PDF-a – `read_lines`
 
