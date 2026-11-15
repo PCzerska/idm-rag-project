@@ -30,12 +30,9 @@ ewaluacja: [ewaluacja.md](ewaluacja.md) (jak mierzyć), [zloty_zbior.md](zloty_z
   - [x] podział: pole `zbior`/`split`, wszystkie 120 pytań = `dev`;
   - [ ] **zbiór `test`** – napisać przed strojeniem pod błędy z dev (zasady:
         [ewaluacja.md](ewaluacja.md#podział-dev--test));
-  - [ ] źródła spoza scenariusza (tabela inscenizacyjna, listy rekwizytów, spis obiektów) –
-        obecnie wszystkie źródła wskazują scenariusz;
-  - [ ] **decyzja:** 19 pytań odwołuje się do scen z [listy rozbieżności](notatki_dane.md#sceny-wykluczone-ze-złotego-zbioru-rozbieżności-tabela--scenariusz)
-        (np. `40A`, `84B`, `103A`, `117*`) – zostawić (źródłem jest sam scenariusz) czy wykluczyć
-        ([lista pytań](zloty_zbior.md#otwarte-kwestie));
-  - [ ] sprawdzić scenę `84B` (brak `84A`) – wykluczyć, jeśli tabela się nie zgadza;
+  - [x] **źródło: tylko scenariusz** – inne dokumenty produkcji nie są używane
+        ([decyzja](notatki_dane.md#decyzja-rola-dokumentów-2026-11-15)); 19 pytań o sceny z listy
+        rozbieżności tabela ↔ scenariusz (np. `40A`, `84B`, `103A`, `117*`) zostaje;
   - [ ] bez nazwisk statystów i adresów z dokumentów produkcji.
 - [x] **Wynik bazowy E1** – `scenariusz_sceny`, `qwen3.5:4b`, retrieval + generacja
       (`eval/baseline/E1.*`) – [omówienie](zloty_zbior.md#wyniki-e1).
@@ -84,6 +81,7 @@ ewaluacja: [ewaluacja.md](ewaluacja.md) (jak mierzyć), [zloty_zbior.md](zloty_z
 
 - [ ] Znaczenie symboli numeracji scen (`A`/`B`, `*`/`**`) – teraz wywnioskowane z konwencji
       ([notatki_dane.md](notatki_dane.md#numeracja-scen)).
+- [ ] Scena `84B` bez `84A` w scenariuszu – informacyjnie, nie wpływa na system ani złoty zbiór.
 
 ## Zrobione
 

@@ -26,8 +26,9 @@ data/processed/chunks.jsonl  (+ raport.txt)
 Qdrant, kolekcja scenariusz_sceny (COLLECTION w .env albo --collection)
 ```
 
-Tylko scenariusz trafia do indeksu. Pozostałe dokumenty produkcji (tabela inscenizacyjna,
-listy, spis obiektów…) nie są przetwarzane – służą do budowy złotego zbioru.
+Tylko scenariusz trafia do indeksu – i tylko on jest źródłem złotego zbioru. Pozostałe dokumenty
+produkcji (tabela inscenizacyjna, listy, spis obiektów…) nie są używane
+([decyzja](notatki_dane.md#decyzja-rola-dokumentów-2026-11-15)).
 
 ## Uruchomienie
 

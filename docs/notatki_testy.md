@@ -46,4 +46,5 @@ Poprawka: przy wyborze cytatu pomijać nagłówek sceny i linię `Postacie:` (+ 
   agregujące (oznaczone osobno – mierzą ograniczenie, nie jakość retrievalu).
 - Pytania z tego testu nadają się jako wzory typów, ale nie wprost: sceny 117/117*/117** i 40A są
   wykluczone przez rozbieżności z tabelą ([notatki_dane.md](notatki_dane.md)) – do złotego zbioru
-  analogiczne pytania o inne sceny.
+  analogiczne pytania o inne sceny. *(Zasada zniesiona 2026-11-15: złoty zbiór opiera się
+  wyłącznie na scenariuszu, więc te sceny mogą w nim występować.)*

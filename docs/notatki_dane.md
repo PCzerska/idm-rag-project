@@ -8,13 +8,21 @@ Jak scenariusz jest przetwarzany na chunki – krok po kroku: [przeplyw_danych.m
 Lista zadań zespołu: [TODO.md](TODO.md).
 Wyniki testów ręcznych: [notatki_testy.md](notatki_testy.md).
 
-## Decyzja: rola dokumentów
+## Decyzja: rola dokumentów (2026-11-15)
 
-- **Scenariusz = jedyne źródło wiedzy RAG** (indeksowany w Qdrancie).
-- **Tabela inscenizacyjna, rekwizyty, grafiki, spis obiektów = materiał do budowy złotego zbioru**
-  (pytania i oczekiwane odpowiedzi), nie trafiają do indeksu.
-- **Sceny z rozbieżnościami między dokumentami nie są używane w złotym zbiorze** – dzięki temu
-  rozbieżności nie wpływają na działanie ani ocenę systemu (lista niżej).
+- **Scenariusz = jedyne źródło wiedzy** – zarówno dla systemu (indeks w Qdrancie), jak i dla
+  złotego zbioru: pytania, oczekiwane odpowiedzi i źródła (`scenariusz#sN`) pochodzą wyłącznie
+  ze scenariusza.
+- **Pozostałe dokumenty produkcji** (tabela inscenizacyjna, rekwizyty, grafiki, spis obiektów)
+  **nie są używane** – ani w indeksie, ani w złotym zbiorze.
+- Skoro system i złoty zbiór opierają się na tym samym dokumencie, **rozbieżności między
+  scenariuszem a tabelą nie wpływają na działanie ani ocenę systemu**. Sceny z listy rozbieżności
+  (np. `40A`, `84B`, `103A`, `117*`) mogą występować w złotym zbiorze – obecnie odwołuje się
+  do nich 19 pytań, wszystkie oparte na scenariuszu.
+- Wcześniej (2026-11-08) pozostałe dokumenty miały służyć do budowy złotego zbioru, a sceny
+  z rozbieżnościami były z niego wykluczone. Zasada przestała być potrzebna, gdy zbiór powstał
+  w całości ze scenariusza. **Jeśli kiedyś wrócimy do innych dokumentów**, pytania oparte na nich
+  nie mogą dotyczyć scen z [listy rozbieżności](#rozbieżności-tabela--scenariusz).
 
 ## Dane wejściowe
 
@@ -23,7 +31,7 @@ Wyniki testów ręcznych: [notatki_testy.md](notatki_testy.md).
   Uruchomienie: `uv run python prepare_data.py --in data/raw --out data/processed`.
 - Pozostałe dokumenty: `../dane/ministranci/` (poza repo) – tabela, listy rekwizytów i grafik,
   spis obiektów, lista obsady, breakdown VFX, `SS _ Ministranci 18.07.pdf`, książka obiektów.
-  Nie są przetwarzane – tylko materiał do złotego zbioru.
+  Nie są przetwarzane ani używane w złotym zbiorze (decyzja wyżej).
 - Anonimizacja scenariusza: pomijana strona tytułowa (nazwisko reżysera) + audyt wyniku
   (e-mail, telefon, kod pocztowy, adres, link). Listy zamian i słów zakazanych z E1 usunięte –
   dotyczyły wyłącznie adresów ze spisu obiektów i nazwisk statystów z tabeli, nie scenariusza.
@@ -97,10 +105,15 @@ zmianie źródła (inny eksport PDF, skan) – wtedy powtórzyć powyższą kont
 Wniosek: **ta sama litera znaczy co innego w scenariuszu i w tabeli** (np. `17A` w tabeli to
 „Sala Ministrantów” = scena 17 ze scenariusza). Nie mapować automatycznie po numerze.
 
-## Sceny wykluczone ze złotego zbioru (rozbieżności tabela ↔ scenariusz)
+## Rozbieżności tabela ↔ scenariusz
+
+Lista informacyjna – nie wpływa na system ani na złoty zbiór (oba opierają się wyłącznie na
+scenariuszu). Ma znaczenie tylko przy ewentualnym powrocie do tabeli lub innych dokumentów.
 
 - Tylko w tabeli: `17B`, `37A`, `37B`, `115A`, `118A`, `117*`.
 - Ze scenariusza bez wpisu w tabeli: `6A`, `16A`, `40A`, `78A`, `103A`, `109A`, `109B`, `113A`, `55`.
 - Niezgodna numeracja między dokumentami: `17`, `17A` (w tabeli „Sala Ministrantów” = scena 17
   ze scenariusza), `103` (dzień 30 „dom Gucciego” = 103A), `117`, `117*`, `117**`.
-- `84B` (brak `84A` w scenariuszu) – do sprawdzenia, patrz [TODO.md](TODO.md#ewaluacja).
+- `84B` (brak `84A` w scenariuszu) – osobliwość numeracji samego scenariusza; scena `84B` jest
+  w indeksie i w złotym zbiorze traktowana jak każda inna. Znaczenie do potwierdzenia
+  z produkcją ([TODO](TODO.md#do-potwierdzenia-z-produkcją)).

@@ -50,7 +50,8 @@ Rekord źródłowy:
 Trudność: `latwe` 30, `srednie` 30, `trudne` 40, `brak` 20 (= trzy ostatnie kategorie).
 Typ odpowiedzi: `fakt` 36, `wyjasnienie` 26, `liczba` 20, `lista` 18, `odmowa_*` 20.
 
-Zbiór obejmuje 133 różne sceny (na 140 w indeksie). Wszystkie źródła wskazują scenariusz.
+Zbiór obejmuje 133 różne sceny (na 140 w indeksie). Wszystkie źródła wskazują scenariusz –
+jedyne źródło wiedzy systemu i złotego zbioru.
 
 ### Ograniczenia wbudowane w zbiór
 
@@ -67,19 +68,12 @@ Zbiór obejmuje 133 różne sceny (na 140 w indeksie). Wszystkie źródła wskaz
 
 ### Otwarte kwestie
 
-**Sceny z listy rozbieżności.** [notatki_dane.md](notatki_dane.md#sceny-wykluczone-ze-złotego-zbioru-rozbieżności-tabela--scenariusz)
-zakładają pominięcie scen, których numeracja nie zgadza się między tabelą inscenizacyjną
-a scenariuszem. 19 pytań odwołuje się do takich scen:
-
-| kategoria | pytania (sceny) |
-|---|---|
-| `agregacja_liczenie` | q058 (40A, 78A, 103, 103A), q061 (6A, 16A, 17A, 40A, 78A, 84B, 103A, 109A, 109B, 113A), q062 (16A, 17, 17A, 84B), q063 (40A, 78A, 103, 109A, 109B), q064 (109B), q066 (103A), q069 (84B, 103), q070 (113A), q074 (117) |
-| `ciaglosc_przedmiotu` | q078 (84B, 103), q083 (109B), q086 (103), q087 (78A) |
-| `kilka_zrodel` | q095 (84B), q096 (117), q098 (117, 117*), q099 (84B), q100 (40A) |
-| `potoczne_parafrazy` | q024 (17) |
-
-Źródłem tych pytań jest sam scenariusz, a rozbieżność dotyczy tabeli – pytania wydają się
-poprawne. Do decyzji: zostawić (i zaktualizować notatki) albo wykluczyć.
+**Sceny z listy rozbieżności – zostają.** 19 pytań odwołuje się do scen, których numeracja nie
+zgadza się między tabelą inscenizacyjną a scenariuszem (np. `40A`, `84B`, `103A`, `117*`):
+q024, q058, q061–q064, q066, q069, q070, q074, q078, q083, q086, q087, q095, q096, q098–q100.
+Wszystkie są oparte wyłącznie na scenariuszu, a scenariusz jest jedynym źródłem wiedzy systemu
+i złotego zbioru, więc rozbieżność z tabelą ich nie dotyczy
+([decyzja 2026-11-15](notatki_dane.md#decyzja-rola-dokumentów-2026-11-15)).
 
 **Zbiór testowy** – jeszcze nie istnieje ([zasady](ewaluacja.md#podział-dev--test)).
 
