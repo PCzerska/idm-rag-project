@@ -1,6 +1,6 @@
 import pytest
 
-from rag.generate import Answer, RagResult, best_quote, inline_markers
+from rag.generate import Answer, RagResult, best_quote, inline_markers, is_refusal
 from rag.retrieve import Hit
 
 
@@ -47,6 +47,44 @@ def test_refusal_is_empty_citations():
     r = _result("W dokumentach nie ma tej informacji.", citations=[])
     assert not r.answered_from_context
     assert not r.has_inline_citations
+
+
+# Przykłady z E1 (qwen3.5:4b, tryb prompt): odmowy z doklejonymi znacznikami i częściowe odpowiedzi.
+@pytest.mark.parametrize(
+    "text, refusal",
+    [
+        ("W podanym kontekście nie ma informacji o nazwisku Księdza Proboszcza [1][2][3].", True),
+        ("W tekście nie ma informacji o nazwie pieśni [1].", True),
+        ("W scenie 49 Filip czyta z Lekcjonarza, a konkretny fragment nie jest podany [5].", True),
+        ("W podanym kontekście nie są podane prawdziwe imiona tych postaci [1].", True),
+        ("Dokument nie zawiera informacji o tym. Inne zdanie [2].", True),
+        ("Nie wiem.", True),
+        # zastrzeżenie dopiero w drugim zdaniu = częściowa odpowiedź, nie odmowa
+        (
+            "Procesja pędzi przez osiedle [1]. Dokument nie zawiera informacji o zmianie kierunku.",
+            False,
+        ),
+        ("Scena 84B ma adnotację [4]. W pozostałych scenach nie ma informacji o tym.", False),
+        ("Filip rzuca kamieniami w okno [2].", False),
+        ("Nie pali Filip, tylko Kurczak [1].", False),  # korekta fałszywej przesłanki
+        # „nie jest określony / nie podaje” bez słowa o źródle = zwykły opis (E2, q080)
+        (
+            "Po pierwszej akcji suma pieniędzy nie jest określona liczbowo [1]. Po drugiej 7000 zł.",
+            False,
+        ),
+        ("Filip nie podaje ręki Proboszczowi [2].", False),
+        ("Kontekst nie wspomina o tym, kto zamyka kościół [1].", True),
+    ],
+)
+def test_is_refusal(text, refusal):
+    assert is_refusal(text) is refusal
+
+
+def test_refusal_with_markers_is_not_an_answer():
+    """Małe modele dopisują [1][2] do odmowy – nie liczy się to jako odpowiedź z kontekstu."""
+    r = _result("W podanym kontekście nie ma informacji o tym [1][2].", citations=[1, 2])
+    assert r.cited_numbers == [1, 2] and r.refused and not r.answered_from_context
+    assert _result("Odpowiedź [1].", citations=[1]).answered_from_context
 
 
 def test_best_quote_picks_overlapping_sentence():

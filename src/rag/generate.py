@@ -37,7 +37,7 @@ class Answer(BaseModel):
     """Schemat odpowiedzi (z niego generujemy JSON Schema dla structured output).
 
     Celowo tylko dwa pola – im prostszy schemat, tym rzadziej mały model się myli.
-    Odmowa odpowiedzi = pusta lista `citations` (nie potrzebujemy osobnej flagi).
+    Odmowę rozpoznaje kod (`is_refusal` + brak cytatów), a nie osobna flaga od modelu.
     """
 
     answer: str = Field(description="Odpowiedź ze znacznikami źródeł w tekście, np. [1].")
@@ -58,6 +58,59 @@ class Answer(BaseModel):
         if isinstance(value, list):
             value = " ".join(map(str, value))
         return [int(n) for n in re.findall(r"\d+", str(value))]
+
+
+# Formuły odmowy po polsku. Szukamy ich tylko w PIERWSZYM zdaniu: „X [1]. Nie ma informacji o Y”
+# to częściowa odpowiedź, a „Nie ma informacji o X [1][2]” – odmowa, mimo doklejonych znaczników.
+# Jednoznaczne formuły odmowy:
+_REFUSAL = re.compile(
+    r"\b(?:"
+    r"nie ma (?:tu |w nim |w nich )?(?:tej |takiej |żadnej |konkretnej )?informacj"
+    r"|brak (?:tej |takiej |żadnej )?informacj"
+    r"|nie zawiera\w* (?:\w+ ){0,3}informacj"
+    r"|nie wiem\b"
+    r"|nie mogę (?:odpowiedzieć|ustalić|stwierdzić)"
+    r"|nie (?:da się|można) (?:\w+ )?(?:ustalić|stwierdzić|określić|odpowiedzieć)"
+    r")",
+    re.IGNORECASE,
+)
+# Formy, które występują też w zwykłym opisie („suma nie jest określona”, „Filip nie podaje
+# ręki”) – odmowa tylko wtedy, gdy zdanie mówi o kontekście / dokumentach.
+_NOT_GIVEN = re.compile(
+    r"\b(?:"
+    r"nie (?:jest|są|został\w*|zostało) (?:\w+ ){0,2}"
+    r"(?:podan|wymienion|opisan|wspomnian|określon|wskazan)\w*"
+    r"|nie znajduj\w* się"
+    r"|nie wspomina\w*"
+    r"|nie podaj\w*"
+    r")",
+    re.IGNORECASE,
+)
+_SOURCE_WORD = re.compile(
+    r"\b(?:kontek\w*|dokument\w*|tekst\w*|fragment\w*|scenariusz\w*|źródł\w*|materiał\w*)",
+    re.IGNORECASE,
+)
+
+
+def first_sentence(text: str) -> str:
+    """Pierwsze zdanie odpowiedzi bez znaczników [n]."""
+    flat = _MARKER.sub("", text).strip()
+    return re.split(r"(?<=[.!?])\s+", flat, maxsplit=1)[0]
+
+
+def is_refusal(text: str) -> bool:
+    """Czy odpowiedź jest odmową – formuła typu „w kontekście nie ma informacji…” w 1. zdaniu.
+
+    Formy „nie jest podany / określony…”, „nie znajduje się”, „nie wspomina”, „nie podaje” liczą się
+    tylko obok słowa o źródle (kontekst, dokument, tekst, fragment, scenariusz).
+
+    Potrzebne, bo małe modele dopisują znaczniki [1][2][3] także do odmów, więc sam brak
+    cytatów nie wystarcza do rozpoznania odmowy. Heurystyka – do sprawdzenia w ocenie ręcznej.
+    """
+    sentence = first_sentence(text)
+    if _REFUSAL.search(sentence):
+        return True
+    return bool(_NOT_GIVEN.search(sentence) and _SOURCE_WORD.search(sentence))
 
 
 def inline_markers(text: str) -> list[int]:
@@ -107,9 +160,14 @@ class RagResult:
         return any(1 <= n <= len(self.hits) for n in inline_markers(self.answer.answer))
 
     @property
+    def refused(self) -> bool:
+        """Odmowa = formuła odmowy w pierwszym zdaniu albo brak cytatów."""
+        return is_refusal(self.answer.answer) or not self.cited_numbers
+
+    @property
     def answered_from_context(self) -> bool:
-        """Odpowiedź oparta na kontekście = cytuje co najmniej jeden fragment."""
-        return bool(self.cited_numbers)
+        """Odpowiedź oparta na kontekście = cytuje co najmniej jeden fragment i nie jest odmową."""
+        return not self.refused
 
     def cited_hits(self) -> list[Hit]:
         """Chunki cytowane przez model."""
